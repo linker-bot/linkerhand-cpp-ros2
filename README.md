@@ -7,7 +7,7 @@ LinkerHand-CPP-ROS2 是灵心巧手科技有限公司开发，基于 LinkerHand-
 [LinkerHand-CPP-SDK](https://github.com/linker-bot/linkerhand-cpp-sdk.git)
 
 #### 工程编译
-    cd linkerhand_cpp_ros2/
+    cd linkerhand-cpp-ros2/
     colcon build
 
 #### 配置XML文件
