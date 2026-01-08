@@ -1,0 +1,96 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  lint_job:
+    name: Format & Static Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Check for Windows Line Endings (CRLF)
+        id: check_crlf
+        run: |
+          echo "🔍 正在检查项目中的 CRLF 换行符..."
+          # 排除 .git 和 build 目录
+          CRLF_FILES=$(find . -type f -not -path '*/.*' -not -path './build/*' -exec file {} + | grep "CRLF" | cut -d: -f1)
+          
+          if [ -n "$CRLF_FILES" ]; then
+            echo "❌ 错误: 发现以下文件包含 Windows (CRLF) 换行符:"
+            echo "$CRLF_FILES"
+            echo "请在本地运行: find . -type f -exec dos2unix {} + 修复。"
+            exit 1
+          else
+            echo "✅ 所有文件均使用 Unix (LF) 换行符。"
+          fi
+
+      - name: Generate Lint Summary
+        if: always()
+        run: |
+          echo "### 📋 Format Check Summary" >> $GITHUB_STEP_SUMMARY
+          echo "| Check Item | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "| --- | --- |" >> $GITHUB_STEP_SUMMARY
+          echo "| CRLF Line Endings | ${{ steps.check_crlf.outcome == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+
+  build_job:
+    name: Build - Ubuntu ${{ matrix.os_ver }} (${{ matrix.ros_distro }})
+    needs: lint_job
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os_ver: "20.04"
+            ros_distro: "foxy"
+            image: "osrf/ros:foxy-desktop"
+          - os_ver: "22.04"
+            ros_distro: "humble"
+            image: "osrf/ros:humble-desktop"
+
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ matrix.image }}
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install System Dependencies
+        run: |
+          apt-get update && apt-get install -y git build-essential nlohmann-json3-dev
+          rosdep update
+          rosdep install --from-paths . --ignore-src -y -r --rosdistro ${{ matrix.ros_distro }}
+
+      - name: Setup LinkerHand SDK
+        run: |
+          git clone --branch v1.1.7 https://github.com/linker-bot/linkerhand-cpp-sdk.git /tmp/sdk
+          cd /tmp/sdk && mkdir build && cd build
+          cmake .. && make -j$(nproc) && make install && ldconfig
+
+      - name: Build Workspace
+        id: build_step
+        run: |
+          . /opt/ros/${{ matrix.ros_distro }}/setup.sh
+          colcon build --event-handlers console_direct+
+
+      - name: Run Tests
+        id: test_step
+        run: |
+          . /opt/ros/${{ matrix.ros_distro }}/setup.sh
+          # 运行测试，排除因网络导致易失败的 xmllint (已在 CMakeLists 中屏蔽则无需此处排除)
+          colcon test --packages-select linker_hand_cpp_ros2 --event-handlers console_direct+
+          colcon test-result --verbose
+
+      - name: Generate Build Summary
+        if: always()
+        run: |
+          echo "### 🚀 Build Summary for ${{ matrix.ros_distro }}" >> $GITHUB_STEP_SUMMARY
+          echo "| Step | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "| --- | --- |" >> $GITHUB_STEP_SUMMARY
+          echo "| Compilation | ${{ steps.build_step.outcome == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Unit Tests | ${{ steps.test_step.outcome == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
