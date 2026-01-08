@@ -4,10 +4,10 @@
 LinkerHand-CPP-ROS2 是灵心巧手科技有限公司开发，基于 LinkerHand-CPP-SDK 的ROS2封装版本。
 
 #### 环境安装
-[LinkerHand-CPP-SDK](../README.md)
+[LinkerHand-CPP-SDK](https://github.com/linker-bot/linkerhand-cpp-sdk.git)
 
 #### 工程编译
-    cd linker_hand_cpp_sdk/ros2/
+    cd linkerhand_cpp_ros2/
     colcon build
 
 #### 配置XML文件
@@ -41,7 +41,7 @@ LinkerHand-CPP-ROS2 是灵心巧手科技有限公司开发，基于 LinkerHand-
 
 #### 运行
     source install/setup.bash
-    ros2 launch linker_hand_cpp_ros2 run.xml
+    ros2 launch linkerhand_cpp_ros2 run.xml
 
 
 #### 话题
@@ -170,12 +170,12 @@ data:
 
 | 序号 | 文件名称  | 描述                                           |
 | :--- | :-------- | :--------------------------------------------- |
-| 1    | examples/src/action_group_show_l7  | L7型号手指舞示例 |
-| 2    | examples/src/action_group_show_l10  | L10型号手指舞示例 |
-| 3    | examples/src/action_group_show_l20  | L20型号手指舞示例 |
-| 4    | examples/src/loop_l20  | L20型号手势张开握拳示例 |
-| 5    | examples/src/show_ok_l20  | L20型号手势ok示例 |
-| 6    | examples/src/show_surround_index_finger_l20  | L20型号单指手势示例 |
-| 7    | examples/src/show_wave_l20  | L20型号wave手势示例 |
-| 8    | examples/src/action_group_show_l25  | L25型号手指舞示例 |
-| 9    | examples/src/loop_l25  | L25型号手势张开握拳示例 |
+| 1    | src/examples/src/action_group_show_l7  | L7型号手指舞示例 |
+| 2    | src/examples/src/action_group_show_l10  | L10型号手指舞示例 |
+| 3    | src/examples/src/action_group_show_l20  | L20型号手指舞示例 |
+| 4    | src/examples/src/loop_l20  | L20型号手势张开握拳示例 |
+| 5    | src/examples/src/show_ok_l20  | L20型号手势ok示例 |
+| 6    | src/examples/src/show_surround_index_finger_l20  | L20型号单指手势示例 |
+| 7    | src/examples/src/show_wave_l20  | L20型号wave手势示例 |
+| 8    | src/examples/src/action_group_show_l25  | L25型号手指舞示例 |
+| 9    | src/examples/src/loop_l25  | L25型号手势张开握拳示例 |
