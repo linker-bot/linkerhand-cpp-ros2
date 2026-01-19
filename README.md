@@ -1,5 +1,11 @@
 # LinkerHand-CPP-ROS2
 
+[![CI/CD Pipeline](https://github.com/linker-bot/linkerhand-cpp-ros2/actions/workflows/ci.yml/badge.svg)](https://github.com/linker-bot/linkerhand-cpp-ros2/actions/workflows/ci.yml)
+[![ROS2 Version](https://img.shields.io/badge/ROS2-Foxy-blue.svg)](https://docs.ros.org/en/foxy/index.html)
+[![ROS2 Version](https://img.shields.io/badge/ROS2-Humble-blue.svg)](https://docs.ros.org/en/humble/index.html)
+[![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg)](LICENSE)
+
+
 ## 概述
 LinkerHand-CPP-ROS2 是灵心巧手科技有限公司开发，基于 LinkerHand-CPP-SDK 的ROS2封装版本。
 

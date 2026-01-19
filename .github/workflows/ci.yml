@@ -1,4 +1,4 @@
-name: LinkerHand ROS2 Multi-Distro CI
+name: CI/CD
 
 on:
   push:
