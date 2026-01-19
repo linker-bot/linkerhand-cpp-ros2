@@ -27,6 +27,22 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
+      - name: Check for Windows Line Endings (CRLF)
+        run: |
+          echo "正在检查项目中的 CRLF 换行符..."
+          # 查找所有源文件，排除 .git 目录和二进制文件
+          # 如果发现包含 \r (CRLF) 的文件，grep 会返回 0
+          CRLF_FILES=$(find . -type f -not -path '*/.*' -exec file {} + | grep "CRLF" | cut -d: -f1)
+          
+          if [ -n "$CRLF_FILES" ]; then
+            echo "❌ 错误: 发现以下文件包含 Windows (CRLF) 换行符:"
+            echo "$CRLF_FILES"
+            echo "请在本地运行: dos2unix <文件名> 进行修复，或配置 git autocrlf。"
+            exit 1
+          else
+            echo "✅ 所有文件均使用 Unix (LF) 换行符。"
+          fi
+
       - name: Install System Dependencies
         run: |
           apt-get update && apt-get install -y \

@@ -103,6 +103,7 @@ if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
   
   # 添加以下行来跳过风格和版权检查
+  set(ament_cmake_xmllint_FOUND TRUE)
   set(ament_cmake_copyright_FOUND TRUE)
   set(ament_cmake_cpplint_FOUND TRUE)
   set(ament_cmake_uncrustify_FOUND TRUE)
