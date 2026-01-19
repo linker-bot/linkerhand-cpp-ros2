@@ -9,10 +9,31 @@
 ## 概述
 LinkerHand-CPP-ROS2 是灵心巧手科技有限公司开发，基于 LinkerHand-CPP-SDK 的ROS2封装版本。
 
-#### 环境安装
-[LinkerHand-CPP-SDK](https://github.com/linker-bot/linkerhand-cpp-sdk.git)
 
-#### 工程编译
+## 📋 目录
+
+- [环境要求](#-环境要求)
+- [快速开始](#-快速开始)
+- [话题详情](#-话题详情)
+- [使用示例](#-使用示例)
+- [许可证](#-许可证)
+- [联系我们](#-联系我们)
+- [更新日志](#-更新日志)
+
+## 💻 环境要求
+
+- **操作系统**: Linux (Ubuntu 20.04+ 推荐)
+- **架构**: x86_64
+- **编译器**: GCC 7.0+ 或 Clang 5.0+
+- **CMake**: 3.15+
+- **依赖**: ROS2 (推荐 Foxy 或 Humble)、[linkerhand-cpp-sdk](https://github.com/linker-bot/linkerhand-cpp-sdk.git)
+
+
+## 🚀 快速开始
+#### 下载
+    git clone https://github.com/linker-bot/linkerhand-cpp-ros2.git
+
+#### 编译
     cd linkerhand-cpp-ros2/
     colcon build
 
@@ -50,7 +71,7 @@ LinkerHand-CPP-ROS2 是灵心巧手科技有限公司开发，基于 LinkerHand-
     ros2 launch linkerhand_cpp_ros2 run.xml
 
 
-#### 话题
+## 📚 话题详情
 
 | 话题名称 | I/O | 消息类型 | 描述 |
 | :--- | :--- | :--- | :--- |
@@ -172,7 +193,7 @@ data:
 - '...'
 ```
 
-## 示例
+## 💡 使用示例
 
 | 序号 | 文件名称  | 描述                                           |
 | :--- | :-------- | :--------------------------------------------- |
@@ -185,3 +206,24 @@ data:
 | 7    | src/examples/src/show_wave_l20  | L20型号wave手势示例 |
 | 8    | src/examples/src/action_group_show_l25  | L25型号手指舞示例 |
 | 9    | src/examples/src/loop_l25  | L25型号手势张开握拳示例 |
+
+
+## 📄 许可证
+
+本项目采用 [Apache 2.0 许可证](LICENSE)。
+
+Copyright (c) 2026 灵心巧手（北京）科技有限公司
+
+## 📞 联系我们
+
+- **官方网站**: [https://linkerbot.cn](https://linkerbot.cn)
+- **关于我们**: [https://linkerbot.cn/aboutUs](https://linkerbot.cn/aboutUs)
+- **GitHub**: [https://github.com/linker-bot/linkerhand-cpp-sdk](https://github.com/linker-bot/linkerhand-cpp-sdk)
+
+## 📝 更新日志
+
+详细的版本更新记录请参考 [CHANGELOG.md](CHANGELOG.md)（待创建）。
+
+---
+
+**注意**: 使用前请确保设备已正确连接并配置好通信接口。
