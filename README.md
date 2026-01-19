@@ -218,7 +218,7 @@ Copyright (c) 2026 灵心巧手（北京）科技有限公司
 
 - **官方网站**: [https://linkerbot.cn](https://linkerbot.cn)
 - **关于我们**: [https://linkerbot.cn/aboutUs](https://linkerbot.cn/aboutUs)
-- **GitHub**: [https://github.com/linker-bot/linkerhand-cpp-sdk](https://github.com/linker-bot/linkerhand-cpp-sdk)
+- **GitHub**: [https://github.com/linker-bot/linkerhand-cpp-ros2](https://github.com/linker-bot/linkerhand-cpp-ros2)
 
 ## 📝 更新日志
 
