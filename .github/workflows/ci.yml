@@ -1,0 +1,67 @@
+name: LinkerHand ROS2 Multi-Distro CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build_job:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os_ver: "20.04"
+            ros_distro: "foxy"
+            image: "osrf/ros:foxy-desktop"
+          - os_ver: "22.04"
+            ros_distro: "humble"
+            image: "osrf/ros:humble-desktop"
+
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ matrix.image }}
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install System Dependencies
+        run: |
+          apt-get update && apt-get install -y \
+            git build-essential nlohmann-json3-dev
+          rosdep update
+          rosdep install --from-paths . --ignore-src -y -r
+
+      - name: Setup LinkerHand SDK
+        run: |
+          git clone https://github.com/linker-bot/linkerhand-cpp-sdk.git /tmp/sdk
+          cd /tmp/sdk && mkdir build && cd build
+          cmake ..
+          make -j$(nproc)
+          make install
+          ldconfig
+
+      - name: Build Workspace
+        id: build_step
+        run: |
+          . /opt/ros/${{ matrix.ros_distro }}/setup.sh
+          colcon build --event-handlers console_direct+
+
+      - name: Run Linter
+        id: test_step
+        run: |
+          . /opt/ros/${{ matrix.ros_distro }}/setup.sh
+          colcon test --packages-select linker_hand_cpp_ros2 --event-handlers console_direct+
+          colcon test-result --verbose
+
+      - name: Generate Summary
+        if: always()
+        run: |
+          echo "### 🚀 CI Summary for Ubuntu ${{ matrix.os_ver }} (${{ matrix.ros_distro }})" >> $GITHUB_STEP_SUMMARY
+          echo "| Step | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "| --- | --- |" >> $GITHUB_STEP_SUMMARY
+          echo "| Build | ${{ steps.build_step.outcome == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Tests/Linter | ${{ steps.test_step.outcome == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
