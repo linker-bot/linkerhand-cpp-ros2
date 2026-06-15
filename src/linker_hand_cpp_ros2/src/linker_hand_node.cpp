@@ -272,7 +272,7 @@ public:
               if (pub_hand_touch_->get_subscription_count() > 0) {
                 publishTouchData(hand_api, *this->pub_hand_touch_);
               }
-              std::this_thread::sleep_for(std::chrono::milliseconds(125));
+              std::this_thread::sleep_for(std::chrono::milliseconds(10));
             }
             });
     }
@@ -283,7 +283,7 @@ public:
               publishJointState(hand_api, *this->pub_hand_state_);
                     // publishJointState(hand_api, *this->pub_hand_state_arc_, true);
             }
-            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
           }
         });
 
@@ -292,7 +292,7 @@ public:
             if (pub_hand_info_->get_subscription_count() > 0) {
               publishLinkerHandInfo(hand_api, *this->pub_hand_info_);
             }
-            std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
           }
         });
   }
@@ -358,7 +358,7 @@ public:
     rclcpp::Publisher<std_msgs::msg::String> & publisher)
   {
     auto message = std_msgs::msg::String();
-    message.data = hand->getVersion() + "Temperature: " + vectorToString(hand->getTemperature()) +
+    message.data = hand->getVersion() + "\nTemperature: " + vectorToString(hand->getTemperature()) +
       "\nFaultCode: " + vectorToString(hand->getFaultCode());
     publisher.publish(message);
 
@@ -409,10 +409,44 @@ public:
       effort = std::vector<uint8_t>(expected_joint_count, hand_effort);
     }
 
-    hand->setSpeed(speed);
-    hand->setTorque(effort);
-    (is_arc) ? hand->fingerMoveArc(msg->position) : hand->fingerMove(convert<double,
-      uint8_t>(msg->position));
+    const auto position = convert<double, uint8_t>(msg->position);
+    bool send_position = true;
+    bool send_speed = true;
+    bool send_effort = true;
+    {
+      std::lock_guard<std::mutex> lock(control_mutex_);
+      if (has_last_control_command && last_control_is_arc == is_arc) {
+        if (!is_arc) {
+          send_position = last_position_command != position;
+        }
+        send_speed = last_speed_command != speed;
+        send_effort = last_effort_command != effort;
+        if (!send_position && !send_speed && !send_effort) {
+          return;
+        }
+      }
+      has_last_control_command = true;
+      last_control_is_arc = is_arc;
+      if (!is_arc && send_position) {
+        last_position_command = position;
+      }
+      if (send_speed) {
+        last_speed_command = speed;
+      }
+      if (send_effort) {
+        last_effort_command = effort;
+      }
+    }
+
+    if (send_speed) {
+      hand->setSpeed(speed);
+    }
+    if (send_effort) {
+      hand->setTorque(effort);
+    }
+    if (send_position) {
+      (is_arc) ? hand->fingerMoveArc(msg->position) : hand->fingerMove(position);
+    }
   }
 
   size_t getJointCount(const std::string & hand_name) const
@@ -492,6 +526,12 @@ private:
   std::string hand_control_arc_topic;
 
   int hand_type;
+  std::mutex control_mutex_;
+  bool has_last_control_command{false};
+  bool last_control_is_arc{false};
+  std::vector<uint8_t> last_position_command;
+  std::vector<uint8_t> last_speed_command;
+  std::vector<uint8_t> last_effort_command;
 };
 
 // signal

@@ -6,6 +6,7 @@ from tkinter import ttk
 
 import rclpy
 from rclpy.node import Node
+from rclpy.parameter_client import AsyncParameterClient
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Float32MultiArray
 from std_msgs.msg import String
@@ -98,6 +99,22 @@ class HandControlPublisher(Node):
         msg.effort = [float(v) for v in torques]
         self.publisher.publish(msg)
 
+    def get_remote_parameter(self, node_name, parameter_name, timeout_sec=1.0):
+        client = AsyncParameterClient(self, node_name)
+        wait_for_service = getattr(client, "wait_for_service", None)
+        if wait_for_service is None:
+            wait_for_service = client.wait_for_services
+        if not wait_for_service(timeout_sec=timeout_sec):
+            return None
+        future = client.get_parameters([parameter_name])
+        rclpy.spin_until_future_complete(self, future, timeout_sec=timeout_sec)
+        if not future.done() or future.result() is None:
+            return None
+        values = future.result().values
+        if not values:
+            return None
+        return values[0].string_value
+
 
 class HandControlGui:
     def __init__(self, node, model, side, topic, live_publish, publish_rate_hz):
@@ -119,6 +136,7 @@ class HandControlGui:
         self.live_var = tk.BooleanVar(value=live_publish)
         self.rate_var = tk.IntVar(value=max(1, int(publish_rate_hz)))
         self.joint_count = JOINT_COUNTS[model]
+        self.command_dirty = False
 
         self.main = None
         self.table_container = None
@@ -126,6 +144,7 @@ class HandControlGui:
         self.position_vars = [tk.IntVar(value=255) for _ in range(self.joint_count)]
         self.speed_vars = [tk.IntVar(value=255) for _ in range(self.joint_count)]
         self.torque_vars = [tk.IntVar(value=255) for _ in range(self.joint_count)]
+        self.watch_command_vars()
         self.state_vars = {
             "position": tk.StringVar(value="-"),
             "speed": tk.StringVar(value="-"),
@@ -288,22 +307,37 @@ class HandControlGui:
         frame = ttk.Frame(parent)
         frame.grid(row=row, column=column, padx=4, pady=2, sticky="ew")
         frame.columnconfigure(0, weight=1)
+        validate_int = (self.root.register(self.validate_byte_text), "%P")
         scale = ttk.Scale(
             frame,
             from_=0,
             to=255,
             orient="horizontal",
-            variable=variable,
+            command=lambda value, var=variable: self.set_int_value(var, value),
         )
+        scale.set(variable.get())
         scale.grid(row=0, column=0, sticky="ew")
+        variable.trace_add("write", lambda *_args, var=variable, widget=scale: widget.set(var.get()))
         spin = ttk.Spinbox(
             frame,
             from_=0,
             to=255,
             width=4,
             textvariable=variable,
+            validate="key",
+            validatecommand=validate_int,
         )
         spin.grid(row=0, column=1, padx=(4, 0))
+
+    def set_int_value(self, variable, value):
+        variable.set(max(0, min(255, int(round(float(value))))))
+
+    def validate_byte_text(self, text):
+        if text == "":
+            return True
+        if not text.isdigit():
+            return False
+        return 0 <= int(text) <= 255
 
     def apply_side_topic(self):
         self.topic_var.set(f"/{self.side_var.get()}_hand_control")
@@ -326,9 +360,11 @@ class HandControlGui:
         self.position_vars = self.resize_vars(old_positions, 255)
         self.speed_vars = self.resize_vars(old_speeds, 255)
         self.torque_vars = self.resize_vars(old_torques, 255)
+        self.watch_command_vars()
         self._build_joint_table()
         self._build_feedback(self.main)
         self.update_summary()
+        self.command_dirty = False
 
     def resize_vars(self, values, default):
         resized = []
@@ -336,6 +372,13 @@ class HandControlGui:
             value = values[index] if index < len(values) else default
             resized.append(tk.IntVar(value=value))
         return resized
+
+    def watch_command_vars(self):
+        for variable in self.position_vars + self.speed_vars + self.torque_vars:
+            variable.trace_add("write", self.mark_command_dirty)
+
+    def mark_command_dirty(self, *_args):
+        self.command_dirty = True
 
     def update_summary(self):
         self.summary.set(
@@ -362,6 +405,7 @@ class HandControlGui:
         self.publish()
 
     def publish(self):
+        self.command_dirty = False
         positions = [var.get() for var in self.position_vars]
         speeds = [var.get() for var in self.speed_vars]
         torques = [var.get() for var in self.torque_vars]
@@ -371,7 +415,7 @@ class HandControlGui:
     def publish_loop(self):
         if self.closed:
             return
-        if self.live_var.get():
+        if self.live_var.get() and self.command_dirty:
             self.publish()
         period_ms = max(1, round(1000 / max(1, self.rate_var.get())))
         self.root.after(period_ms, self.publish_loop)
@@ -552,7 +596,12 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--side", default="left", choices=("left", "right"))
     parser.add_argument("--topic", default=None)
-    parser.add_argument("--model", default="O6", choices=sorted(JOINT_COUNTS))
+    parser.add_argument(
+        "--model",
+        default=None,
+        choices=sorted(JOINT_COUNTS),
+        help="hand model; auto-read HAND_JOINTS from the running hand node when omitted",
+    )
     parser.add_argument(
         "--no-live",
         action="store_true",
@@ -570,22 +619,31 @@ def main():
 
     rclpy.init()
     node = HandControlPublisher(topic)
-    spin_thread = threading.Thread(target=rclpy.spin, args=(node,), daemon=True)
-    spin_thread.start()
+    model = args.model or read_hand_model(node, args.side) or "O6"
 
     gui = HandControlGui(
         node=node,
-        model=args.model,
+        model=model,
         side=args.side,
         topic=topic,
         live_publish=not args.no_live,
         publish_rate_hz=args.rate,
     )
+    spin_thread = threading.Thread(target=rclpy.spin, args=(node,), daemon=True)
+    spin_thread.start()
     try:
         gui.run()
     finally:
         node.destroy_node()
         rclpy.shutdown()
+
+
+def read_hand_model(node, side):
+    node_name = f"/linker_hand_{side}_node"
+    model = node.get_remote_parameter(node_name, "HAND_JOINTS")
+    if model in JOINT_COUNTS:
+        return model
+    return None
 
 
 if __name__ == "__main__":
