@@ -15,6 +15,7 @@
 #include <functional>
 #include <cstring>
 #include <map>
+#include <cctype>
 #include <nlohmann/json.hpp>
 #include <sstream>
 #include <stdexcept>
@@ -27,6 +28,7 @@
 
 #include "LinkerHandApi.h"
 #include "CommFactory.h"
+#include "Modbus.h"
 
 using namespace std::chrono_literals;
 
@@ -68,6 +70,7 @@ public:
     this->declare_parameter<std::string>("HAND_JOINTS", "L7");
     this->declare_parameter<int>("HAND_SPEED", 50);
     this->declare_parameter<int>("HAND_EFFORT", 200);
+    this->declare_parameter<std::string>("COMM_TYPE", "CAN");
     this->declare_parameter<std::string>("CAN_CHANNEL", "can0");
     this->declare_parameter<int>("CAN_BITRATE", 1000000);
 
@@ -91,13 +94,16 @@ public:
     this->get_parameter("HAND_JOINTS", hand_joints);
     this->get_parameter("HAND_SPEED", hand_speed);
     this->get_parameter("HAND_EFFORT", hand_effort);
+    this->get_parameter("COMM_TYPE", comm_type);
     this->get_parameter("CAN_CHANNEL", can_channel);
     this->get_parameter("CAN_BITRATE", can_bitrate);
 
         // std::cout << "LinkerHand SDK version: " << version << std::endl;
+    normalizeCommType();
+
     std::cout << (hand_type ==
     0 ? "LEFT_HAND" : "RIGHT_HAND") << "  HAND_EXISTS:" << hand_exists << "  HAND_JOINTS:" <<
-      hand_joints << "  HAND_TOUCH:" << hand_touch << std::endl;
+      hand_joints << "  HAND_TOUCH:" << hand_touch << "  COMM_TYPE:" << comm_type << std::endl;
 
     if (hand_exists != true) {return;}
 
@@ -117,9 +123,10 @@ public:
     if (hand_exists) {
       auto it = linker_hand_map.find(hand_joints);
       if (it != linker_hand_map.end()) {
-        if (it->second == LINKER_HAND::O20) {
+        hand_model = it->second;
+        if (hand_model == LINKER_HAND::O20) {
           RCLCPP_ERROR(this->get_logger(),
-            "O20 requires CAN-FD and is not supported by this CAN-only ROS2 node yet");
+            "O20 requires CAN-FD and is not supported by this ROS2 node yet");
           return;
         }
 
@@ -131,58 +138,15 @@ public:
           std::cout << "Invalid hand_type: " << hand_type << std::endl;
           return;
         }
-        try {
-          hand_api = std::make_unique<LinkerHandApi>(it->second, side, COMM_TYPE::CAN);
-        } catch (const std::exception & e) {
-          RCLCPP_ERROR(this->get_logger(), "Failed to create LinkerHandApi: %s", e.what());
-          return;
-        }
       } else {
         std::cout << "Invalid hand: " << hand_joints << std::endl;
         return;
       }
     }
 
-    try {
-      can_bus = std::shared_ptr<Communication::ICanBus>(
-        Communication::CommFactory::createCanBus(side));
-    } catch (const std::exception & e) {
-      RCLCPP_ERROR(this->get_logger(), "Failed to create CAN bus: %s", e.what());
-      RCLCPP_ERROR(this->get_logger(),
-        "Start CAN first, for example: sudo ip link set can0 up type can bitrate %d && "
-        "sudo ip link set can0 txqueuelen 1024",
-        can_bitrate);
+    if (!initTransport()) {
       return;
     }
-
-    hand_api->setCanTxCallback([this](uint32_t can_id, const uint8_t * data,
-      uintptr_t data_len) -> int32_t {
-        try {
-          std::vector<uint8_t> data_vec(data, data + data_len);
-          can_bus->send(data_vec, can_id);
-          return 0;
-        } catch (const std::exception & e) {
-          RCLCPP_ERROR(this->get_logger(), "CAN send error: %s", e.what());
-          return -1;
-        }
-      });
-
-    hand_api->setCanRxCallback([this](uint32_t * can_id_out, uint8_t * data_out,
-      uint8_t * len_out) -> int32_t {
-        try {
-          auto frame = can_bus->recv();
-          if (frame.can_id == 0 && frame.can_dlc == 0) {
-            return -1;
-          }
-          *can_id_out = frame.can_id;
-          *len_out = frame.can_dlc;
-          std::memcpy(data_out, frame.data, frame.can_dlc);
-          return 0;
-        } catch (const std::exception & e) {
-          RCLCPP_ERROR(this->get_logger(), "CAN receive error: %s", e.what());
-          return -1;
-        }
-      });
     node_active = true;
 
     if (hand_exists) {initHand(hand_api, hand_joints);}
@@ -267,7 +231,7 @@ public:
 
     if (hand_exists && hand_touch) {
       pub_touch_thread = std::thread([this]() {
-            while (rclcpp::ok()) {
+            while (rclcpp::ok() && node_active) {
                     // rclcpp::spin_some(this);
               if (pub_hand_touch_->get_subscription_count() > 0) {
                 publishTouchData(hand_api, *this->pub_hand_touch_);
@@ -278,7 +242,7 @@ public:
     }
 
     pub_state_thread = std::thread([this]() {
-          while (rclcpp::ok()) {
+          while (rclcpp::ok() && node_active) {
             if (pub_hand_state_->get_subscription_count() > 0) {
               publishJointState(hand_api, *this->pub_hand_state_);
                     // publishJointState(hand_api, *this->pub_hand_state_arc_, true);
@@ -288,7 +252,7 @@ public:
         });
 
     pub_info_thread = std::thread([this]() {
-          while (rclcpp::ok()) {
+          while (rclcpp::ok() && node_active) {
             if (pub_hand_info_->get_subscription_count() > 0) {
               publishLinkerHandInfo(hand_api, *this->pub_hand_info_);
             }
@@ -300,6 +264,7 @@ public:
   ~LinkerHand()
   {
         // Ensure the release of resources in the destructor
+    node_active = false;
     hand_api.reset();
 
     if (pub_touch_thread.joinable()) {pub_touch_thread.join();}
@@ -310,6 +275,136 @@ public:
   bool isActive() const
   {
     return node_active;
+  }
+
+  void normalizeCommType()
+  {
+    for (auto & ch : comm_type) {
+      ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+    }
+  }
+
+  bool initTransport()
+  {
+    if (comm_type == "CAN") {
+      return initCanTransport();
+    }
+    if (comm_type == "MODBUS") {
+      return initModbusTransport();
+    }
+    RCLCPP_ERROR(this->get_logger(), "Unsupported COMM_TYPE: %s", comm_type.c_str());
+    return false;
+  }
+
+  bool initCanTransport()
+  {
+    try {
+      hand_api = std::make_unique<LinkerHandApi>(hand_model, side, COMM_TYPE::CAN);
+    } catch (const std::exception & e) {
+      RCLCPP_ERROR(this->get_logger(), "Failed to create CAN LinkerHandApi: %s", e.what());
+      return false;
+    }
+
+    try {
+      can_bus = std::shared_ptr<Communication::ICanBus>(
+        Communication::CommFactory::createCanBus(side));
+    } catch (const std::exception & e) {
+      RCLCPP_ERROR(this->get_logger(), "Failed to create CAN bus: %s", e.what());
+      RCLCPP_ERROR(this->get_logger(),
+        "Start CAN first, for example: sudo ip link set can0 up type can bitrate %d && "
+        "sudo ip link set can0 txqueuelen 1024",
+        can_bitrate);
+      return false;
+    }
+
+    hand_api->setCanTxCallback([this](uint32_t can_id, const uint8_t * data,
+      uintptr_t data_len) -> int32_t {
+        try {
+          std::vector<uint8_t> data_vec(data, data + data_len);
+          can_bus->send(data_vec, can_id);
+          return 0;
+        } catch (const std::exception & e) {
+          RCLCPP_ERROR(this->get_logger(), "CAN send error: %s", e.what());
+          return -1;
+        }
+      });
+
+    hand_api->setCanRxCallback([this](uint32_t * can_id_out, uint8_t * data_out,
+      uint8_t * len_out) -> int32_t {
+        try {
+          auto frame = can_bus->recv();
+          if (frame.can_id == 0 && frame.can_dlc == 0) {
+            return -1;
+          }
+          *can_id_out = frame.can_id;
+          *len_out = frame.can_dlc;
+          std::memcpy(data_out, frame.data, frame.can_dlc);
+          return 0;
+        } catch (const std::exception & e) {
+          RCLCPP_ERROR(this->get_logger(), "CAN receive error: %s", e.what());
+          return -1;
+        }
+      });
+
+    return true;
+  }
+
+  bool initModbusTransport()
+  {
+    if (!supportsModbus(hand_joints)) {
+      RCLCPP_ERROR(this->get_logger(), "MODBUS is only supported for O6, L7, and L10");
+      return false;
+    }
+
+    try {
+      hand_api = std::make_unique<LinkerHandApi>(hand_model, side, COMM_TYPE::MODBUS);
+    } catch (const std::exception & e) {
+      RCLCPP_ERROR(this->get_logger(), "Failed to create Modbus LinkerHandApi: %s", e.what());
+      return false;
+    }
+
+    try {
+      modbus = std::make_shared<Modbus>(side);
+    } catch (const std::exception & e) {
+      RCLCPP_ERROR(this->get_logger(), "Failed to create Modbus transport: %s", e.what());
+      return false;
+    }
+    if (!modbus || !modbus->isOpen()) {
+      RCLCPP_ERROR(this->get_logger(), "Failed to open Modbus serial transport");
+      return false;
+    }
+
+    hand_api->setModbusTxCallback([this](uint8_t, uint16_t, const uint8_t * data,
+      uintptr_t len) -> int32_t {
+        if (!modbus) {
+          return -1;
+        }
+        return modbus->sendRawFrame(data, len) ? 0 : -1;
+      });
+
+    hand_api->setModbusRxCallback([this](uint8_t sid, uint16_t * addr_out,
+      uint8_t * data_out, uint8_t * len_out) -> int32_t {
+        if (!modbus) {
+          return -1;
+        }
+        const int len = modbus->receiveCompleteFrame(data_out, 256, 500);
+        if (len <= 0 || data_out[0] != sid) {
+          return -1;
+        }
+        *len_out = static_cast<uint8_t>(len);
+        if (addr_out) {
+          *addr_out = 0;
+        }
+        return 0;
+      });
+
+    RCLCPP_INFO(this->get_logger(), "Modbus transport initialized by hand side");
+    return true;
+  }
+
+  bool supportsModbus(const std::string & hand_name) const
+  {
+    return hand_name == "O6" || hand_name == "L7" || hand_name == "L10";
   }
 
     // General function: Publish touch sensor data
@@ -479,8 +574,9 @@ public:
   void initHand(const HandType & hand, const std::string & hand_name)
   {
     if (hand_name == "L10") {
-      hand->setSpeed(std::vector<uint8_t>(5, hand_speed));       // speed
-      hand->setTorque(std::vector<uint8_t>(5, hand_effort));       // torque
+      const auto joint_count = getJointCount(hand_name);
+      hand->setSpeed(std::vector<uint8_t>(joint_count, hand_speed));       // speed
+      hand->setTorque(std::vector<uint8_t>(joint_count, hand_effort));       // torque
       hand->fingerMove({255, 128, 255, 255, 255, 255, 128, 128, 128, 128});       // joint position
     }
   }
@@ -505,12 +601,15 @@ private:
   bool hand_touch;
   bool node_active{false};
   std::string hand_joints;
+  std::string comm_type;
 
   int hand_speed;
   int hand_effort;
   int can_bitrate;
   HAND_TYPE side;
+  LINKER_HAND hand_model;
   std::shared_ptr<Communication::ICanBus> can_bus;
+  std::shared_ptr<Modbus> modbus;
 
     // 创建线程对象
   std::thread pub_touch_thread;
