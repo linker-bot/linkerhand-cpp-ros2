@@ -37,6 +37,11 @@ target_link_libraries(linker_hand_node LinkerHand::linkerhand_cpp_sdk nlohmann_j
 install(TARGETS linker_hand_node
   DESTINATION lib/${PROJECT_NAME})
 
+install(PROGRAMS
+  scripts/left_hand_control_gui.py
+  DESTINATION lib/${PROJECT_NAME}
+)
+
 install (DIRECTORY launch
   DESTINATION share/${PROJECT_NAME}
 )
