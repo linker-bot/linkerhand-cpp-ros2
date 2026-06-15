@@ -68,9 +68,9 @@ jobs:
 
       - name: Setup LinkerHand SDK
         run: |
-          git clone --branch v1.1.7 https://github.com/linker-bot/linkerhand-cpp-sdk.git /tmp/sdk
+          git clone --depth 1 --branch v2.1.7 https://github.com/linker-bot/linkerhand-cpp-sdk.git /tmp/sdk
           cd /tmp/sdk && mkdir build && cd build
-          cmake .. && make -j$(nproc) && make install && ldconfig
+          cmake .. -DBUILD_EXAMPLES=OFF && make install && ldconfig
 
       - name: Build Workspace
         id: build_step

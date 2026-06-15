@@ -12,6 +12,7 @@
 #include <mutex>
 #include <condition_variable>
 #include <functional>
+#include <cstring>
 #include <nlohmann/json.hpp>
 #include <stdexcept>
 
@@ -22,6 +23,7 @@
 #include <std_msgs/msg/u_int8_multi_array.hpp>
 
 #include "LinkerHandApi.h"
+#include "CommFactory.h"
 
 using namespace std::chrono_literals;
 
@@ -66,6 +68,7 @@ public:
         this->declare_parameter<int>("HAND_SPEED", 50);
         this->declare_parameter<int>("HAND_EFFORT", 200);
         this->declare_parameter<std::string>("CAN_CHANNEL", "can0");
+        this->declare_parameter<int>("CAN_BITRATE", 1000000);
 
         this->declare_parameter<std::string>("HAND_SETTING_TOPIC", "/cb_hand_setting_cmd");
         this->declare_parameter<std::string>("HAND_CONTROL_TOPIC", "/cb_hand_control_cmd");
@@ -88,6 +91,7 @@ public:
         this->get_parameter("HAND_SPEED", hand_speed);
         this->get_parameter("HAND_EFFORT", hand_effort);
         this->get_parameter("CAN_CHANNEL", can_channel);
+        this->get_parameter("CAN_BITRATE", can_bitrate);
 
         // std::cout << "LinkerHand SDK version: " << version << std::endl;
         std::cout << (hand_type == 0 ? "LEFT_HAND" : "RIGHT_HAND") << "  HAND_EXISTS:" << hand_exists << "  HAND_JOINTS:" << hand_joints << "  HAND_TOUCH:" << hand_touch << std::endl;
@@ -96,31 +100,67 @@ public:
 
         // LinkerHandType mapping
         std::map<std::string, LINKER_HAND> linker_hand_map = {
+            {"L6", LINKER_HAND::L6},
             {"L7", LINKER_HAND::L7},
             {"L10", LINKER_HAND::L10},
             {"L20", LINKER_HAND::L20},
             {"L21", LINKER_HAND::L21},
-            {"L25", LINKER_HAND::L25}
+            {"L25", LINKER_HAND::L25},
+            {"O6", LINKER_HAND::O6},
+            {"O20", LINKER_HAND::O20},
+            {"G20", LINKER_HAND::G20}
         };
-
-	COMM_TYPE channel;
-
-	(can_channel == "can0") ? channel = COMM_TYPE::COMM_CAN_0 : channel = COMM_TYPE::COMM_CAN_1;
 
         if (hand_exists) {
             auto it = linker_hand_map.find(hand_joints);
             if (it != linker_hand_map.end()) {
+                if (it->second == LINKER_HAND::O20) {
+                    RCLCPP_ERROR(this->get_logger(), "O20 requires CAN-FD and is not supported by this CAN-only ROS2 node yet");
+                    return;
+                }
                 if (hand_type == 0) {
-                    hand_api = std::make_unique<LinkerHandApi>(it->second, HAND_TYPE::LEFT, channel);
+                    hand_api = std::make_unique<LinkerHandApi>(it->second, HAND_TYPE::LEFT, COMM_TYPE::CAN);
                 } else if (hand_type == 1) {
-                    hand_api = std::make_unique<LinkerHandApi>(it->second, HAND_TYPE::RIGHT, channel);
+                    hand_api = std::make_unique<LinkerHandApi>(it->second, HAND_TYPE::RIGHT, COMM_TYPE::CAN);
                 } else {
                     std::cout << "Invalid hand_type: " << hand_type << std::endl;
+                    return;
                 }
             } else {
                 std::cout << "Invalid hand: " << hand_joints << std::endl;
+                return;
             }
         }
+
+        can_bus = std::shared_ptr<Communication::ICanBus>(
+            Communication::CommFactory::createCanBus(can_channel, can_bitrate));
+
+        hand_api->setCanTxCallback([this](uint32_t can_id, const uint8_t *data, uintptr_t data_len) -> int32_t {
+            try {
+                std::vector<uint8_t> data_vec(data, data + data_len);
+                can_bus->send(data_vec, can_id);
+                return 0;
+            } catch (const std::exception &e) {
+                RCLCPP_ERROR(this->get_logger(), "CAN send error: %s", e.what());
+                return -1;
+            }
+        });
+
+        hand_api->setCanRxCallback([this](uint32_t *can_id_out, uint8_t *data_out, uint8_t *len_out) -> int32_t {
+            try {
+                auto frame = can_bus->recv();
+                if (frame.can_id == 0 && frame.can_dlc == 0) {
+                    return -1;
+                }
+                *can_id_out = frame.can_id;
+                *len_out = frame.can_dlc;
+                std::memcpy(data_out, frame.data, frame.can_dlc);
+                return 0;
+            } catch (const std::exception &e) {
+                RCLCPP_ERROR(this->get_logger(), "CAN receive error: %s", e.what());
+                return -1;
+            }
+        });
 
         if (hand_exists) initHand(hand_api, hand_joints);
 
@@ -158,11 +198,8 @@ public:
                     hand_api->clearFaultCode();
                 }
 
-                // setCurrent 
                 if (data["setting_cmd"] == "set_electric_current") {
-                    int tmp = data["params"]["electric_current"].get<int>();
-                    std::vector<uint8_t> e_c(5, tmp);
-                    hand_api->setCurrent(e_c);
+                    RCLCPP_WARN(this->get_logger(), "set_electric_current is not supported by linkerhand-cpp-sdk v2.1.7");
                 }
 
                 // enable 
@@ -237,9 +274,14 @@ public:
         // Ensure the release of resources in the destructor
         hand_api.reset();
 
-        pub_touch_thread.join();
-        pub_state_thread.join();
-        pub_info_thread.join();
+        if (pub_touch_thread.joinable()) pub_touch_thread.join();
+        if (pub_state_thread.joinable()) pub_state_thread.join();
+        if (pub_info_thread.joinable()) pub_info_thread.join();
+    }
+
+    bool isActive() const
+    {
+        return hand_api != nullptr;
     }
 
     // General function: Publish touch sensor data
@@ -250,9 +292,11 @@ public:
 
         const auto& touch = hand->getForce();
 
-        for (const auto& vec : touch) {
-            for (uint8_t byte : vec) {
-                message.data.push_back(static_cast<float>(byte));
+        for (const auto& finger_data : touch) {
+            for (const auto& sensor_row : finger_data) {
+                for (uint8_t byte : sensor_row) {
+                    message.data.push_back(static_cast<float>(byte));
+                }
             }
         }
         publisher.publish(message);
@@ -276,7 +320,7 @@ public:
     void publishLinkerHandInfo(const HandType& hand, rclcpp::Publisher<std_msgs::msg::String>& publisher)
     {
         auto message = std_msgs::msg::String();
-        message.data = hand->getVersion() + "Temperature: " + vectorToString(hand->getTemperature()) + "\nFaultCode: " + vectorToString(hand->getFaultCode()) + "\nCurrent: " + vectorToString(hand->getCurrent());
+        message.data = hand->getVersion() + "Temperature: " + vectorToString(hand->getTemperature()) + "\nFaultCode: " + vectorToString(hand->getFaultCode());
         publisher.publish(message);
 
         
@@ -306,45 +350,39 @@ public:
         std::vector<uint8_t> speed(5, hand_speed);
         std::vector<uint8_t> effort(5, hand_effort);
 
-        if (hand_name == "L7" && msg->position.size() == 7)
-        {
-            (msg->velocity.size() == 7) ? speed = convert<double, u_int8_t>(msg->velocity) : speed = std::vector<uint8_t>(7, hand_speed);
-            (msg->effort.size() == 7) ? effort = convert<double, u_int8_t>(msg->effort) : effort = std::vector<uint8_t>(7, hand_effort);
-
-            hand->setSpeed(speed); // speed
-            hand->setTorque(effort); // torque
-            (is_arc) ? hand->fingerMoveArc(msg->position) : hand->fingerMove(convert<double, u_int8_t>(msg->position)); // joint position
-        }
-        else if (hand_name == "L10" && msg->position.size() == 10)
-        {
-            if (msg->velocity.size() == 5) speed = convert<double, u_int8_t>(msg->velocity);
-
-            hand->setSpeed(speed); // speed
-            hand->setTorque(effort); // torque
-            (is_arc) ? hand->fingerMoveArc(msg->position) : hand->fingerMove(convert<double, u_int8_t>(msg->position)); // joint position
-        }
-        else if (hand_name == "L20" && msg->position.size() == 20)
-        {
-            if (msg->velocity.size() == 5) speed = convert<double, u_int8_t>(msg->velocity);
-
-            hand->setSpeed(speed); // speed
-            // hand->setTorque({100, 100, 100, 100, 100}); // torque
-            (is_arc) ? hand->fingerMoveArc(msg->position) : hand->fingerMove(convert<double, u_int8_t>(msg->position)); // joint position
-        }
-        else if ((hand_name == "L25" || hand_name == "L21") && msg->position.size() == 25)
-        {
-            (msg->velocity.size() == 25) ? speed = convert<double, u_int8_t>(msg->velocity) : speed = std::vector<uint8_t>(25, hand_speed);
-            (msg->effort.size() == 25) ? effort = convert<double, u_int8_t>(msg->effort) : effort = std::vector<uint8_t>(25, hand_effort);
-
-            hand->setSpeed(speed); // speed
-            hand->setTorque(effort); // torque
-            (is_arc) ? hand->fingerMoveArc(msg->position) : hand->fingerMove(convert<double, u_int8_t>(msg->position)); // joint position
-        }
-        else 
-        {
+        const auto expected_joint_count = getJointCount(hand_name);
+        if (expected_joint_count == 0 || msg->position.size() != expected_joint_count) {
             std::cout << hand_name << " Invalid joint number: " << msg->position.size() << std::endl;
             return;
         }
+
+        if (msg->velocity.size() == expected_joint_count) {
+            speed = convert<double, uint8_t>(msg->velocity);
+        } else {
+            speed = std::vector<uint8_t>(expected_joint_count, hand_speed);
+        }
+        if (msg->effort.size() == expected_joint_count) {
+            effort = convert<double, uint8_t>(msg->effort);
+        } else {
+            effort = std::vector<uint8_t>(expected_joint_count, hand_effort);
+        }
+
+        hand->setSpeed(speed);
+        hand->setTorque(effort);
+        (is_arc) ? hand->fingerMoveArc(msg->position) : hand->fingerMove(convert<double, uint8_t>(msg->position));
+    }
+
+    size_t getJointCount(const std::string& hand_name) const
+    {
+        if (hand_name == "L6" || hand_name == "O6") return 6;
+        if (hand_name == "L7") return 7;
+        if (hand_name == "L10") return 10;
+        if (hand_name == "L20") return 20;
+        if (hand_name == "L21") return 21;
+        if (hand_name == "L25") return 25;
+        if (hand_name == "G20") return 16;
+        if (hand_name == "O20") return 34;
+        return 0;
     }
 
     // std::vector<unsigned char> to std::string
@@ -392,6 +430,8 @@ private:
 
     int hand_speed;
     int hand_effort;
+    int can_bitrate;
+    std::shared_ptr<Communication::ICanBus> can_bus;
 
     // 创建线程对象
     std::thread pub_touch_thread;
@@ -431,6 +471,11 @@ int main(int argc, char *argv[])
     std::signal(SIGINT, signalHandler);
 
     auto node = std::make_shared<LinkerHand>();
+    if (!node->isActive()) {
+        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Hand is disabled or failed to initialize. Exiting.");
+        rclcpp::shutdown();
+        return 0;
+    }
 
     rclcpp::spin(node);
     return 0;
