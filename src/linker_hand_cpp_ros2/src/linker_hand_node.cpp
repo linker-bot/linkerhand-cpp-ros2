@@ -438,8 +438,8 @@ public:
   {
     auto message = sensor_msgs::msg::JointState();
 
-    (is_arc) ? message.position = hand->getStateArc() : message.position = convert<uint8_t,
-        double>(hand->getState());
+    (is_arc) ? message.position = hand->getPositionArc() : message.position = convert<uint8_t,
+        double>(hand->getPosition());
     message.velocity = convert<uint8_t, double>(hand->getSpeed());
     message.effort = convert<uint8_t, double>(hand->getTorque());
 
@@ -540,7 +540,7 @@ public:
       hand->setTorque(effort);
     }
     if (send_position) {
-      (is_arc) ? hand->fingerMoveArc(msg->position) : hand->fingerMove(position);
+      (is_arc) ? hand->setPositionArc(msg->position) : hand->setPosition(position);
     }
   }
 
@@ -553,7 +553,7 @@ public:
     if (hand_name == "L21") {return 21;}
     if (hand_name == "L25") {return 25;}
     if (hand_name == "G20") {return 16;}
-    if (hand_name == "O20") {return 34;}
+    if (hand_name == "O20") {return 16;}
     return 0;
   }
 
@@ -577,7 +577,7 @@ public:
       const auto joint_count = getJointCount(hand_name);
       hand->setSpeed(std::vector<uint8_t>(joint_count, hand_speed));       // speed
       hand->setTorque(std::vector<uint8_t>(joint_count, hand_effort));       // torque
-      hand->fingerMove({255, 128, 255, 255, 255, 255, 128, 128, 128, 128});       // joint position
+      hand->setPosition({255, 128, 255, 255, 255, 255, 128, 128, 128, 128});       // joint position
     }
   }
 
