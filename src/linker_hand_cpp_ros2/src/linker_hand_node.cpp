@@ -233,8 +233,12 @@ public:
       pub_touch_thread = std::thread([this]() {
             while (rclcpp::ok() && node_active) {
                     // rclcpp::spin_some(this);
-              if (pub_hand_touch_->get_subscription_count() > 0) {
-                publishTouchData(hand_api, *this->pub_hand_touch_);
+              try {
+                if (pub_hand_touch_->get_subscription_count() > 0) {
+                  publishTouchData(hand_api, *this->pub_hand_touch_);
+                }
+              } catch (const std::exception & e) {
+                RCLCPP_ERROR(this->get_logger(), "touch publish error: %s", e.what());
               }
               std::this_thread::sleep_for(std::chrono::milliseconds(10));
             }
@@ -243,9 +247,13 @@ public:
 
     pub_state_thread = std::thread([this]() {
           while (rclcpp::ok() && node_active) {
-            if (pub_hand_state_->get_subscription_count() > 0) {
-              publishJointState(hand_api, *this->pub_hand_state_);
-                    // publishJointState(hand_api, *this->pub_hand_state_arc_, true);
+            try {
+              if (pub_hand_state_->get_subscription_count() > 0) {
+                publishJointState(hand_api, *this->pub_hand_state_);
+                      // publishJointState(hand_api, *this->pub_hand_state_arc_, true);
+              }
+            } catch (const std::exception & e) {
+              RCLCPP_ERROR(this->get_logger(), "state publish error: %s", e.what());
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
           }
@@ -253,8 +261,12 @@ public:
 
     pub_info_thread = std::thread([this]() {
           while (rclcpp::ok() && node_active) {
-            if (pub_hand_info_->get_subscription_count() > 0) {
-              publishLinkerHandInfo(hand_api, *this->pub_hand_info_);
+            try {
+              if (pub_hand_info_->get_subscription_count() > 0) {
+                publishLinkerHandInfo(hand_api, *this->pub_hand_info_);
+              }
+            } catch (const std::exception & e) {
+              RCLCPP_ERROR(this->get_logger(), "info publish error: %s", e.what());
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
           }
@@ -265,11 +277,14 @@ public:
   {
         // Ensure the release of resources in the destructor
     node_active = false;
-    hand_api.reset();
 
+        // Stop publisher threads before releasing hand_api, so no thread
+        // dereferences a freed hand_api during shutdown.
     if (pub_touch_thread.joinable()) {pub_touch_thread.join();}
     if (pub_state_thread.joinable()) {pub_state_thread.join();}
     if (pub_info_thread.joinable()) {pub_info_thread.join();}
+
+    hand_api.reset();
   }
 
   bool isActive() const
@@ -599,7 +614,7 @@ private:
   std::string version;
   bool hand_exists;
   bool hand_touch;
-  bool node_active{false};
+  std::atomic<bool> node_active{false};
   std::string hand_joints;
   std::string comm_type;
 
