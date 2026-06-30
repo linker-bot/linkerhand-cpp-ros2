@@ -317,7 +317,14 @@ class HandControlGui:
         )
         scale.set(variable.get())
         scale.grid(row=0, column=0, sticky="ew")
-        variable.trace_add("write", lambda *_args, var=variable, widget=scale: widget.set(var.get()))
+        # variable.trace_add(
+        #     "write",
+        #     lambda *_args, var=variable, widget=scale: widget.set(var.get())
+        # )
+        variable.trace_add(
+            "write",
+            lambda *_args, var=variable, widget=scale: widget.set(var.get()),
+        )
         spin = ttk.Spinbox(
             frame,
             from_=0,
