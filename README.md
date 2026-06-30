@@ -200,21 +200,6 @@ data:
 - '...'
 ```
 
-## 💡 使用示例
-
-| 序号 | 文件名称  | 描述                                           |
-| :--- | :-------- | :--------------------------------------------- |
-| 1    | src/examples/src/action_group_show_l7  | L7型号手指舞示例 |
-| 2    | src/examples/src/action_group_show_l10  | L10型号手指舞示例 |
-| 3    | src/examples/src/action_group_show_l20  | L20型号手指舞示例 |
-| 4    | src/examples/src/loop_l20  | L20型号手势张开握拳示例 |
-| 5    | src/examples/src/show_ok_l20  | L20型号手势ok示例 |
-| 6    | src/examples/src/show_surround_index_finger_l20  | L20型号单指手势示例 |
-| 7    | src/examples/src/show_wave_l20  | L20型号wave手势示例 |
-| 8    | src/examples/src/action_group_show_l25  | L25型号手指舞示例 |
-| 9    | src/examples/src/loop_l25  | L25型号手势张开握拳示例 |
-
-
 ## 📄 许可证
 
 本项目采用 [Apache 2.0 许可证](LICENSE)。
