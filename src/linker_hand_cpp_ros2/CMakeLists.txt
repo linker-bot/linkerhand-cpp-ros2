@@ -38,7 +38,7 @@ install(TARGETS linker_hand_node
   DESTINATION lib/${PROJECT_NAME})
 
 install(PROGRAMS
-  scripts/left_hand_control_gui.py
+  scripts/hand_control_gui.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
