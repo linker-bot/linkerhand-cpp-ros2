@@ -24,6 +24,19 @@ JOINT_COUNTS = {
     "O20": 34,
 }
 
+# Per-model position slider defaults (joint order matches README). Length should
+# equal JOINT_COUNTS[model]; position_defaults() pads with 255 / truncates as a
+# safety net. Currently all 255 — tune per joint as needed.
+POSITION_DEFAULTS = {model: [255] * count for model, count in JOINT_COUNTS.items()}
+POSITION_DEFAULTS["G20"] = [255, 255, 255, 255, 255, 255, 130, 125, 125, 
+                            125, 255, 255, 255, 255, 255, 255]
+
+def position_defaults(model):
+    count = JOINT_COUNTS.get(model, 0)
+    values = POSITION_DEFAULTS.get(model, [])
+    return [values[i] if i < len(values) else 255 for i in range(count)]
+
+
 FINGER_NAMES = ("Thumb", "Index", "Middle", "Ring", "Little")
 
 
@@ -141,7 +154,7 @@ class HandControlGui:
         self.main = None
         self.table_container = None
         self.feedback_container = None
-        self.position_vars = [tk.IntVar(value=255) for _ in range(self.joint_count)]
+        self.position_vars = [tk.IntVar(value=v) for v in position_defaults(model)]
         self.speed_vars = [tk.IntVar(value=255) for _ in range(self.joint_count)]
         self.torque_vars = [tk.IntVar(value=255) for _ in range(self.joint_count)]
         self.watch_command_vars()
@@ -360,11 +373,11 @@ class HandControlGui:
         self.update_summary()
 
     def apply_model(self):
-        old_positions = [var.get() for var in self.position_vars]
         old_speeds = [var.get() for var in self.speed_vars]
         old_torques = [var.get() for var in self.torque_vars]
-        self.joint_count = JOINT_COUNTS[self.model_var.get()]
-        self.position_vars = self.resize_vars(old_positions, 255)
+        model = self.model_var.get()
+        self.joint_count = JOINT_COUNTS[model]
+        self.position_vars = [tk.IntVar(value=v) for v in position_defaults(model)]
         self.speed_vars = self.resize_vars(old_speeds, 255)
         self.torque_vars = self.resize_vars(old_torques, 255)
         self.watch_command_vars()
