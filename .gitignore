@@ -1,3 +1,6 @@
 build
 install
 log
+.vscode/
+src/linker_hand_cpp_ros2/scripts/_*
+CLAUDE.md
