@@ -168,6 +168,7 @@ class HandControlGui:
         self.live_var = tk.BooleanVar(value=live_publish)
         self.rate_var = tk.IntVar(value=max(1, int(publish_rate_hz)))
         self.joint_count = JOINT_COUNTS[model]
+        self._current_model = model
         self.command_dirty = False
 
         self.middle_container = None
@@ -399,54 +400,71 @@ class HandControlGui:
 
         self._build_feedback(self.middle_container)
         self._build_control(self.middle_container)
-        self._build_status(self.main)
         self.update_summary()
 
-    def _build_toolbar(self):
-        bar = tk.Frame(self.root, background=self.CARD, height=58)
-        bar.grid(row=0, column=0, sticky="ew")
-        bar.grid_propagate(False)
-        bar.columnconfigure(5, weight=1)
+        tk.Frame(self.root, background=self.BORDER, height=1).grid(
+            row=3, column=0, sticky="ew"
+        )
+        self._build_footer()
 
-        self._logo_image = self._load_logo()
+    def _build_footer(self):
+        bar = tk.Frame(self.root, background=self.CARD, height=60)
+        bar.grid(row=4, column=0, sticky="ew")
+        bar.grid_propagate(False)
+        bar.columnconfigure(0, weight=1)
         if self._logo_image is not None:
             tk.Label(
                 bar, image=self._logo_image, background=self.CARD,
                 borderwidth=0, highlightthickness=0,
-            ).grid(row=0, column=0, padx=(20, 24), pady=8, sticky="w")
+            ).grid(row=0, column=0, pady=8)
         else:
             ttk.Label(bar, text="LinkerHand", style="Brand.TLabel").grid(
-                row=0, column=0, padx=(22, 28), pady=14, sticky="w"
+                row=0, column=0, pady=14
             )
 
+    def _build_toolbar(self):
+        bar = tk.Frame(self.root, background=self.CARD, height=45)
+        bar.grid(row=0, column=0, sticky="ew")
+        bar.grid_propagate(False)
+        bar.rowconfigure(0, weight=1)
+        bar.columnconfigure(4, weight=1)
+
+        self._logo_image = self._load_logo()
+
         ttk.Label(bar, text="型号", style="ToolbarLabel.TLabel").grid(
-            row=0, column=1, padx=(0, 6)
+            row=0, column=0, padx=(22, 6)
         )
         model_box = ttk.Combobox(
             bar, textvariable=self.model_var, values=sorted(JOINT_COUNTS),
             state="readonly", width=6,
         )
-        model_box.grid(row=0, column=2, padx=(0, 22))
-        model_box.bind("<<ComboboxSelected>>", lambda _e: self.apply_model())
+        model_box.grid(row=0, column=1, padx=(0, 22))
+        model_box.bind(
+            "<<ComboboxSelected>>",
+            lambda _e, w=model_box: (self.apply_model(), self._clear_combo_selection(w)),
+        )
 
         ttk.Label(bar, text="侧别", style="ToolbarLabel.TLabel").grid(
-            row=0, column=3, padx=(0, 6)
+            row=0, column=2, padx=(0, 6)
         )
         side_box = ttk.Combobox(
             bar, textvariable=self.side_var, values=("left", "right"),
             state="readonly", width=6,
         )
-        side_box.grid(row=0, column=4, padx=(0, 18))
-        side_box.bind("<<ComboboxSelected>>", lambda _e: self.apply_side_topic())
+        side_box.grid(row=0, column=3, padx=(0, 22))
+        side_box.bind(
+            "<<ComboboxSelected>>",
+            lambda _e, w=side_box: (self.apply_side_topic(), self._clear_combo_selection(w)),
+        )
 
         self.live_dot = tk.Canvas(
             bar, width=10, height=10, background=self.CARD, highlightthickness=0
         )
-        self.live_dot.grid(row=0, column=6, padx=(0, 6))
+        self.live_dot.grid(row=0, column=5, padx=(0, 6))
         ttk.Checkbutton(
             bar, text="实时", variable=self.live_var, style="Switch.TCheckbutton",
             command=self._refresh_live_dot,
-        ).grid(row=0, column=7, padx=(0, 22))
+        ).grid(row=0, column=6, padx=(0, 22))
         self._refresh_live_dot()
         self.live_var.trace_add("write", lambda *_a: self._refresh_live_dot())
 
@@ -456,6 +474,13 @@ class HandControlGui:
         color = self.GREEN if self.live_var.get() else self.GRAY_DOT
         self.live_dot.delete("all")
         self.live_dot.create_oval(1, 1, 9, 9, fill=color, outline="")
+
+    def _clear_combo_selection(self, widget):
+        try:
+            widget.selection_clear()
+        except tk.TclError:
+            pass
+        self.root.focus_set()
 
     def _card(self, parent):
         return tk.Frame(
@@ -620,9 +645,23 @@ class HandControlGui:
             lambda e: canvas.itemconfigure(window_id, width=e.width),
         )
         canvas.configure(yscrollcommand=scrollbar.set)
-        canvas.grid(row=1, column=0, sticky="nsew", padx=(14, 0), pady=(0, 14))
-        scrollbar.grid(row=1, column=1, sticky="ns", padx=(0, 6), pady=(0, 14))
+        canvas.grid(row=1, column=0, sticky="nsew", padx=(14, 0), pady=(0, 10))
+        scrollbar.grid(row=1, column=1, sticky="ns", padx=(0, 6), pady=(0, 10))
         self._bind_mousewheel(canvas)
+
+        footer = tk.Frame(card, background=self.CARD)
+        footer.grid(row=2, column=0, columnspan=2, sticky="ew",
+                    padx=10, pady=(0, 6))
+        footer.columnconfigure(0, weight=1)
+        link = tk.Label(
+            footer, text="复制位置值",
+            background=self.CARD, foreground=self.MUTED,
+            font=(self.font_family, 10), cursor="hand2", padx=2, pady=2,
+        )
+        link.grid(row=0, column=1, sticky="e")
+        link.bind("<Button-1>", lambda _e: self._copy_positions())
+        link.bind("<Enter>", lambda _e: link.configure(foreground=self.ACCENT))
+        link.bind("<Leave>", lambda _e: link.configure(foreground=self.MUTED))
 
         body.columnconfigure(0, weight=1)
         body.rowconfigure(0, weight=1)
@@ -700,56 +739,69 @@ class HandControlGui:
         frame.grid(row=row, column=column, padx=(0, 8), pady=4, sticky="ew")
         frame.columnconfigure(0, weight=1)
         validate_int = (self.root.register(self.validate_byte_text), "%P")
-        scale = ttk.Scale(
-            frame, from_=0, to=255, orient="horizontal",
-            command=lambda v, var=variable: self.set_int_value(var, v),
+
+        slider_h = 24
+        thumb_r = 7
+        pad = thumb_r + 2
+        canvas = tk.Canvas(
+            frame, height=slider_h, background=self.CARD,
+            highlightthickness=0, borderwidth=0,
         )
-        scale.set(variable.get())
-        scale.grid(row=0, column=0, sticky="ew")
+        canvas.grid(row=0, column=0, sticky="ew")
 
-        def _sync_scale(*_a, var=variable, w=scale):
+        y = slider_h // 2
+        track_id = canvas.create_line(0, y, 0, y, fill=self.TROUGH,
+                                      width=2, capstyle="round")
+        fill_id = canvas.create_line(0, y, 0, y, fill=self.ACCENT,
+                                     width=2, capstyle="round")
+        thumb_id = canvas.create_oval(0, 0, 0, 0, fill=self.ACCENT, outline="")
+
+        def _redraw():
+            w = max(1, canvas.winfo_width())
             try:
-                w.set(var.get())
+                v = variable.get()
             except tk.TclError:
-                pass
+                v = 0
+            frac = max(0.0, min(1.0, v / 255.0))
+            x0, x1 = pad, w - pad
+            if x1 <= x0:
+                x1 = x0 + 1
+            cx = x0 + frac * (x1 - x0)
+            canvas.coords(track_id, x0, y, x1, y)
+            canvas.coords(fill_id, x0, y, cx, y)
+            canvas.coords(thumb_id, cx - thumb_r, y - thumb_r,
+                          cx + thumb_r, y + thumb_r)
 
-        trace_id = variable.trace_add("write", _sync_scale)
-        self._slider_traces.append((variable, trace_id))
-
-        def _jump(event, s=scale, var=variable):
-            width = max(1, s.winfo_width())
-            frac = max(0.0, min(1.0, event.x / width))
-            self.set_int_value(var, frac * 255)
+        def _jump(event):
+            w = max(1, canvas.winfo_width())
+            x0, x1 = pad, w - pad
+            span = max(1, x1 - x0)
+            frac = max(0.0, min(1.0, (event.x - x0) / span))
+            self.set_int_value(variable, frac * 255)
             return "break"
 
-        scale.bind("<Button-1>", _jump)
-        scale.bind("<B1-Motion>", _jump)
+        canvas.bind("<Configure>", lambda _e: _redraw())
+        canvas.bind("<Button-1>", _jump)
+        canvas.bind("<B1-Motion>", _jump)
+
+        trace_id = variable.trace_add("write", lambda *_a: _redraw())
+        self._slider_traces.append((variable, trace_id))
 
         ttk.Spinbox(
             frame, from_=0, to=255, width=4, textvariable=variable,
             validate="key", validatecommand=validate_int,
         ).grid(row=0, column=1, padx=(8, 0))
 
-    def _build_status(self, parent):
-        row = ttk.Frame(parent, style="App.TFrame")
-        row.grid(row=1, column=0, sticky="ew", pady=(12, 0))
-        row.columnconfigure(2, weight=1)
-        self.status_dot = tk.Canvas(
-            row, width=10, height=10, background=self.BG, highlightthickness=0,
-        )
-        self.status_dot.grid(row=0, column=0, padx=(0, 8))
-        self.status_dot.create_oval(1, 1, 9, 9, fill=self.GREEN, outline="")
-        ttk.Label(row, textvariable=self.status_var, style="Muted.TLabel").grid(
-            row=0, column=1, padx=(0, 12), sticky="w"
-        )
-        ttk.Label(row, textvariable=self.summary_var, style="Muted.TLabel").grid(
-            row=0, column=2, sticky="w"
-        )
-
     # ---------- helpers ----------
 
     def set_int_value(self, variable, value):
         variable.set(max(0, min(255, int(round(float(value))))))
+
+    def _copy_positions(self):
+        text = ", ".join(str(var.get()) for var in self.position_vars)
+        self.root.clipboard_clear()
+        self.root.clipboard_append(text)
+        self.status_var.set(f"已复制位置到剪贴板 ({len(self.position_vars)} 关节)")
 
     def validate_byte_text(self, text):
         if text == "":
@@ -772,11 +824,14 @@ class HandControlGui:
         self.update_summary()
 
     def apply_model(self):
+        model = self.model_var.get()
+        if model == getattr(self, "_current_model", None):
+            return
+        self._current_model = model
         old_speeds = [var.get() for var in self.speed_vars]
         old_torques = [var.get() for var in self.torque_vars]
         old_touch_shape = self.touch_shape()
         old_canvas_size = self.touch_canvas_size()
-        model = self.model_var.get()
         self.joint_count = JOINT_COUNTS[model]
         self.position_vars = [tk.IntVar(value=v) for v in position_defaults(model)]
         self.speed_vars = self.resize_vars(old_speeds, 255)
