@@ -1,27 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
 <launch>
   <!-- 参数声明 -->
-  <arg name="VERSION" default="2.1.7" description="SDK版本号"/>
+  <arg name="VERSION" default="2.1.8" description="SDK版本号"/>
 
   <!-- 左手配置 -->
-  <arg name="LEFT_HAND_EXISTS" default="false" description="是否存在左手"/>
+  <arg name="LEFT_HAND_EXISTS" default="true" description="是否存在左手"/>
   <arg name="LEFT_TOUCH" default="true" description="是否有压力传感器"/>
-  <arg name="LEFT_JOINTS" default="L21" description="左手型号 L6 \ L7 \ L10 \ L20 \ L21 \ L25 \ O6 \ O20 \ G20"/>
+  <arg name="LEFT_JOINTS" default="G20" description="左手型号 L6 \ L7 \ L10 \ L20 \ L21 \ L25 \ O6 \ O20 \ G20"/>
   <arg name="LEFT_COMM_TYPE" default="CAN" description="通信方式 CAN \ MODBUS"/>
-  <arg name="LEFT_CANBUS" default="can0" description="can0 \ can1"/>
 
   <!-- 右手配置 -->
-  <arg name="RIGHT_HAND_EXISTS" default="true" description="是否存在右手"/>
+  <arg name="RIGHT_HAND_EXISTS" default="false" description="是否存在右手"/>
   <arg name="RIGHT_TOUCH" default="true" description="是否有压力传感器"/>
-  <arg name="RIGHT_JOINTS" default="L10" description="右手型号 L6 \ L7 \ L10 \ L20 \ L21 \ L25 \ O6 \ O20 \ G20"/>
+  <arg name="RIGHT_JOINTS" default="L6" description="右手型号 L6 \ L7 \ L10 \ L20 \ L21 \ L25 \ O6 \ O20 \ G20"/>
   <arg name="RIGHT_COMM_TYPE" default="CAN" description="通信方式 CAN \ MODBUS"/>
-  <arg name="RIGHT_CANBUS" default="can0" description="can0 \ can1"/>
 
   <!-- 通用配置 -->
-  <arg name="HAND_SPEED" default="100" description="关节速度 0 ~ 255"/>
-  <arg name="HAND_EFFORT" default="200" description="关节扭矩 0 ~ 255"/>
+  <arg name="HAND_SPEED" default="255" description="关节速度 0 ~ 255"/>
+  <arg name="HAND_EFFORT" default="255" description="关节扭矩 0 ~ 255"/>
   <arg name="CAN_BITRATE" default="1000000" description="CAN波特率"/>
-
 
 
   <!-- 节点启动 -->
@@ -34,7 +31,6 @@
     <param name="HAND_SPEED" value="$(var HAND_SPEED)"/>
     <param name="HAND_EFFORT" value="$(var HAND_EFFORT)"/>
     <param name="COMM_TYPE" value="$(var LEFT_COMM_TYPE)"/>
-    <param name="CAN_CHANNEL" value="$(var LEFT_CANBUS)"/>
     <param name="CAN_BITRATE" value="$(var CAN_BITRATE)"/>
     <param name="VERSION" value="$(var VERSION)"/>
     <!-- 左手话题命名 -->
@@ -56,7 +52,6 @@
     <param name="HAND_SPEED" value="$(var HAND_SPEED)"/>
     <param name="HAND_EFFORT" value="$(var HAND_EFFORT)"/>
     <param name="COMM_TYPE" value="$(var RIGHT_COMM_TYPE)"/>
-    <param name="CAN_CHANNEL" value="$(var RIGHT_CANBUS)"/>
     <param name="CAN_BITRATE" value="$(var CAN_BITRATE)"/>
     <param name="VERSION" value="$(var VERSION)"/>
     <!-- 左手话题命名 -->
