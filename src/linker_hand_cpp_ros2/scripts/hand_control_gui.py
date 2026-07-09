@@ -654,7 +654,7 @@ class HandControlGui:
                     padx=10, pady=(0, 6))
         footer.columnconfigure(0, weight=1)
         link = tk.Label(
-            footer, text="复制位置值",
+            footer, text="复制位置",
             background=self.CARD, foreground=self.MUTED,
             font=(self.font_family, 10), cursor="hand2", padx=2, pady=2,
         )
