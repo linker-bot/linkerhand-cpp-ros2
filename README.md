@@ -29,7 +29,7 @@ LinkerHand-CPP-ROS2 是灵心巧手科技有限公司开发，基于 LinkerHand-
 - **依赖**: ROS2 (推荐 Foxy 或 Humble)、[linkerhand-cpp-sdk v2.1.8](https://github.com/linker-bot/linkerhand-cpp-sdk/releases/tag/v2.1.8)、`nlohmann_json`
 - **GUI 可选依赖**: `python3-tk`、`rclpy`（用于 `hand_control_gui.py`）
 
-> 注：CI 已适配 linkerhand-cpp-sdk v2.1.8；O20 依赖 CAN-FD，当前 ROS2 节点仍以普通 CAN 为主，暂未完成 O20 实机运行适配。Modbus 通信当前仅支持 O6 / L7 / L10。
+> 注：CI 已适配 linkerhand-cpp-sdk v2.1.8；O20 依赖 CAN-FD，需在 launch 里设置 `COMM_TYPE=CANFD`（走 SDK 的 libcanbus 通道，参见下文“启动 CAN 设备”）。Modbus 通信当前仅支持 O6 / L7 / L10。
 
 
 ## 🚀 快速开始
@@ -55,7 +55,32 @@ LinkerHand-CPP-ROS2 是灵心巧手科技有限公司开发，基于 LinkerHand-
     sudo ip link set can0 down 2>/dev/null
     sudo ip link set can0 up type can bitrate 1000000
 
-> Modbus 通信当前仅支持 O6 / L7 / L10；O20 依赖 CAN-FD，暂未完成 O20 实机运行适配。
+> Modbus 通信当前仅支持 O6 / L7 / L10。
+
+#### 启动 CAN-FD 设备（O20 必需）
+
+O20 只支持 CAN-FD，需在 launch 中把 `COMM_TYPE` 设为 `CANFD`。CAN-FD 走 SDK 的 libcanbus 驱动（不是 SocketCAN），通过 `(dev_num, ch_num)` 定位通道：
+
+- 默认 `CANFD_DEV_NUM=-1` / `CANFD_CH_NUM=-1`：由 `HAND_TYPE` 推断（左手→ch0，右手→ch1，dev 固定 0）。
+- 双设备或非常规布线时，可在 launch 显式覆盖，例如 `LEFT_CANFD_DEV:=0 LEFT_CANFD_CH:=1`。
+
+首次使用前需要安装 SDK 附带的 udev 规则，否则只有 root 能打开 CAN-FD 适配器：
+
+    sudo cp /usr/local/lib/linkerhand-cpp-sdk/third_party/libcanbus/rules/hcanbus.rules /etc/udev/rules.d/
+    sudo udevadm control --reload-rules
+    sudo udevadm trigger
+    # 装完规则后把 CAN-FD 适配器拔下再插上，让 USB 重新枚举
+
+验证权限（`lsusb` 找到 CAN-FD 设备的 bus/device 号后）：
+
+    ls -l /dev/bus/usb/<bus>/<device>   # 期望 crw-rw-rw-（0666）
+
+启动示例：
+
+    ros2 launch linker_hand_cpp_ros2 run.xml \
+      LEFT_JOINTS:=O20 LEFT_COMM_TYPE:=CANFD
+
+若报 “CAN-FD scanDevices() -> 0” 或 “CanFD::init() failed”，先确认适配器已识别（`lsusb` 能看到 `ID a8fa:8598 CANFD Analyser`）且当前用户有 rw 权限；否则先补 udev 规则再重插。
 
 #### 配置 XML 文件
 
