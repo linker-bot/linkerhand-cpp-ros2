@@ -23,7 +23,7 @@ JOINT_COUNTS = {
     "L21": 21,
     "L25": 25,
     "G20": 16,
-    "O20": 34,
+    "O20": 17,
 }
 
 # Per-model position slider defaults (joint order matches README). Length should
@@ -32,7 +32,7 @@ JOINT_COUNTS = {
 POSITION_DEFAULTS = {model: [255] * count for model, count in JOINT_COUNTS.items()}
 POSITION_DEFAULTS["G20"] = [255, 255, 255, 255, 255, 255, 130, 125, 125,
                             125, 255, 255, 255, 255, 255, 255]
-
+POSITION_DEFAULTS["O20"] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 
 def position_defaults(model):
     count = JOINT_COUNTS.get(model, 0)

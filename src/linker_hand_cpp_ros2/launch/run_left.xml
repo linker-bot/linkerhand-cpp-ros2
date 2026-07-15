@@ -6,14 +6,16 @@
   <!-- 左手配置 -->
   <arg name="LEFT_HAND_EXISTS" default="true" description="是否存在左手"/>
   <arg name="LEFT_TOUCH" default="true" description="是否有压力传感器"/>
-  <arg name="LEFT_JOINTS" default="G20" description="左手型号 L6 \ L7 \ L10 \ L20 \ L21 \ L25 \ O6 \ O20 \ G20"/>
-  <arg name="LEFT_COMM_TYPE" default="CAN" description="通信方式 CAN \ MODBUS"/>
+  <arg name="LEFT_JOINTS" default="O20" description="左手型号 L6 \ L7 \ L10 \ L20 \ L21 \ L25 \ O6 \ O20 \ G20"/>
+  <arg name="LEFT_COMM_TYPE" default="CANFD" description="通信方式 CAN \ CANFD \ MODBUS"/>
   <arg name="LEFT_CANBUS" default="can0" description="can0 \ can1"/>
 
   <!-- 通用配置 -->
   <arg name="HAND_SPEED" default="255" description="关节速度 0 ~ 255"/>
   <arg name="HAND_EFFORT" default="255" description="关节扭矩 0 ~ 255"/>
   <arg name="CAN_BITRATE" default="1000000" description="CAN波特率"/>
+  <arg name="LEFT_CANFD_DEV" default="-1" description="左手 CAN-FD libcanbus 设备号，-1 表示按 HAND_TYPE 推断"/>
+  <arg name="LEFT_CANFD_CH"  default="-1" description="左手 CAN-FD libcanbus 通道号，-1 表示按 HAND_TYPE 推断"/>
 
 
 
@@ -29,6 +31,8 @@
     <param name="COMM_TYPE" value="$(var LEFT_COMM_TYPE)"/>
     <param name="CAN_CHANNEL" value="$(var LEFT_CANBUS)"/>
     <param name="CAN_BITRATE" value="$(var CAN_BITRATE)"/>
+    <param name="CANFD_DEV_NUM" value="$(var LEFT_CANFD_DEV)"/>
+    <param name="CANFD_CH_NUM" value="$(var LEFT_CANFD_CH)"/>
     <param name="VERSION" value="$(var VERSION)"/>
     <!-- 左手话题命名 -->
     <param name="HAND_SETTING_TOPIC" value="/left_hand_settings"/>

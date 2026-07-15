@@ -29,6 +29,10 @@
 #include "LinkerHandApi.h"
 #include "CommFactory.h"
 #include "Modbus.h"
+#if LINKERHAND_USE_CANFD
+#include "communication/ICanFD.h"
+#include "communication/CanFD.h"
+#endif
 
 using namespace std::chrono_literals;
 
@@ -73,6 +77,8 @@ public:
     this->declare_parameter<std::string>("COMM_TYPE", "CAN");
     this->declare_parameter<std::string>("CAN_CHANNEL", "can0");
     this->declare_parameter<int>("CAN_BITRATE", 1000000);
+    this->declare_parameter<int>("CANFD_DEV_NUM", -1);
+    this->declare_parameter<int>("CANFD_CH_NUM", -1);
 
     this->declare_parameter<std::string>("HAND_SETTING_TOPIC", "/cb_hand_setting_cmd");
     this->declare_parameter<std::string>("HAND_CONTROL_TOPIC", "/cb_hand_control_cmd");
@@ -97,6 +103,8 @@ public:
     this->get_parameter("COMM_TYPE", comm_type);
     this->get_parameter("CAN_CHANNEL", can_channel);
     this->get_parameter("CAN_BITRATE", can_bitrate);
+    this->get_parameter("CANFD_DEV_NUM", canfd_dev_num);
+    this->get_parameter("CANFD_CH_NUM", canfd_ch_num);
 
         // std::cout << "LinkerHand SDK version: " << version << std::endl;
     normalizeCommType();
@@ -124,9 +132,9 @@ public:
       auto it = linker_hand_map.find(hand_joints);
       if (it != linker_hand_map.end()) {
         hand_model = it->second;
-        if (hand_model == LINKER_HAND::O20) {
+        if (hand_model == LINKER_HAND::O20 && comm_type != "CANFD") {
           RCLCPP_ERROR(this->get_logger(),
-            "O20 requires CAN-FD and is not supported by this ROS2 node yet");
+            "O20 requires CAN-FD; set COMM_TYPE=CANFD to enable this hand");
           return;
         }
 
@@ -304,6 +312,9 @@ public:
     if (comm_type == "CAN") {
       return initCanTransport();
     }
+    if (comm_type == "CANFD") {
+      return initCanFdTransport();
+    }
     if (comm_type == "MODBUS") {
       return initModbusTransport();
     }
@@ -362,6 +373,92 @@ public:
       });
 
     return true;
+  }
+
+  bool initCanFdTransport()
+  {
+#if LINKERHAND_USE_CANFD
+    try {
+      hand_api = std::make_unique<LinkerHandApi>(hand_model, side, COMM_TYPE::CAN);
+    } catch (const std::exception & e) {
+      RCLCPP_ERROR(this->get_logger(), "Failed to create CAN-FD LinkerHandApi: %s", e.what());
+      return false;
+    }
+
+    try {
+      uint32_t dev = (side == HAND_TYPE::RIGHT) ? 1u : 0u;
+      uint32_t ch  = 0u;
+      bool explicit_dev_ch = (canfd_dev_num >= 0 && canfd_ch_num >= 0);
+      if (explicit_dev_ch) {
+        dev = static_cast<uint32_t>(canfd_dev_num);
+        ch  = static_cast<uint32_t>(canfd_ch_num);
+      }
+
+      const int scan = Communication::CanFD::scanDevices();
+      RCLCPP_INFO(this->get_logger(), "CAN-FD scanDevices() -> %d", scan);
+      if (scan <= 0) {
+        RCLCPP_ERROR(this->get_logger(),
+          "CAN-FD scan found no device. Check libcanbus adapter is plugged in "
+          "and that current user has permission (see 60-linkerhand-canfd udev rules).");
+        return false;
+      }
+
+      auto canfd = std::make_shared<Communication::CanFD>(dev, ch);
+      if (!canfd->init()) {
+        RCLCPP_ERROR(this->get_logger(),
+          "CanFD::init() failed for dev=%u ch=%u", dev, ch);
+        return false;
+      }
+      canfd_bus = canfd;
+      RCLCPP_INFO(this->get_logger(),
+        "CAN-FD bus opened via dev=%u ch=%u%s",
+        dev, ch, explicit_dev_ch ? "" : " (auto by HAND_TYPE)");
+    } catch (const std::exception & e) {
+      RCLCPP_ERROR(this->get_logger(), "Failed to create CAN-FD bus: %s", e.what());
+      return false;
+    }
+    if (!canfd_bus || !canfd_bus->isOpen()) {
+      RCLCPP_ERROR(this->get_logger(), "CAN-FD bus is not open");
+      return false;
+    }
+
+    hand_api->setCanTxCallback([this](uint32_t can_id, const uint8_t * data,
+      uintptr_t data_len) -> int32_t {
+        try {
+          std::vector<uint8_t> data_vec(data, data + data_len);
+          canfd_bus->send(data_vec, can_id, true);
+          return 0;
+        } catch (const std::exception & e) {
+          RCLCPP_ERROR(this->get_logger(), "CAN-FD send error: %s", e.what());
+          return -1;
+        }
+      });
+
+    hand_api->setCanRxCallback([this](uint32_t * can_id_out, uint8_t * data_out,
+      uint8_t * len_out) -> int32_t {
+        try {
+          auto frame = canfd_bus->recv(100);
+          if (!frame.valid) {
+            return -1;
+          }
+          const uint8_t len = Communication::CanFD::dlcToLen(frame.can_dlc);
+          *can_id_out = frame.can_id;
+          *len_out = len;
+          std::memcpy(data_out, frame.data, len);
+          return 0;
+        } catch (const std::exception & e) {
+          RCLCPP_ERROR(this->get_logger(), "CAN-FD receive error: %s", e.what());
+          return -1;
+        }
+      });
+
+    RCLCPP_INFO(this->get_logger(), "CAN-FD transport initialized");
+    return true;
+#else
+    RCLCPP_ERROR(this->get_logger(),
+      "CAN-FD support was not enabled at SDK build time (LINKERHAND_USE_CANFD=OFF)");
+    return false;
+#endif
   }
 
   bool initModbusTransport()
@@ -568,7 +665,7 @@ public:
     if (hand_name == "L21") {return 21;}
     if (hand_name == "L25") {return 25;}
     if (hand_name == "G20") {return 16;}
-    if (hand_name == "O20") {return 16;}
+    if (hand_name == "O20") {return 17;}
     return 0;
   }
 
@@ -621,10 +718,15 @@ private:
   int hand_speed;
   int hand_effort;
   int can_bitrate;
+  int canfd_dev_num;
+  int canfd_ch_num;
   HAND_TYPE side;
   LINKER_HAND hand_model;
   std::shared_ptr<Communication::ICanBus> can_bus;
   std::shared_ptr<Modbus> modbus;
+#if LINKERHAND_USE_CANFD
+  std::shared_ptr<Communication::ICanFD> canfd_bus;
+#endif
 
     // 创建线程对象
   std::thread pub_touch_thread;
